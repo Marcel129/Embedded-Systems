@@ -59,6 +59,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define RGB_R_Pin GPIO_PIN_1
+#define RGB_R_GPIO_Port GPIOA
+#define RGB_G_Pin GPIO_PIN_2
+#define RGB_G_GPIO_Port GPIOA
+#define RGB_B_Pin GPIO_PIN_3
+#define RGB_B_GPIO_Port GPIOA
 #define MOTOR_R_EN_Pin GPIO_PIN_6
 #define MOTOR_R_EN_GPIO_Port GPIOC
 #define MOTOR_R_PH_Pin GPIO_PIN_7

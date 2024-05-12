@@ -40,6 +40,7 @@ enum {__FORWARD, __BACKWARD} direction;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim8;
 
 /* USER CODE BEGIN PV */
@@ -50,6 +51,7 @@ TIM_HandleTypeDef htim8;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM8_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void __robot_init(){
 	HAL_GPIO_WritePin(MOTOR_L_EN_GPIO_Port, MOTOR_L_EN_Pin, GPIO_PIN_RESET);
@@ -62,36 +64,111 @@ void __robot_init(){
 	HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
 }
 
-void __robot_Move(int8_t power){
+enum {FORWARD, BACWARD, LEFT, RIGHT, STOP} moveDir;
 
-	static int8_t currentSpeed = 0;
+void __robot_Move(moveDir md, int8_t L_power, int8_t R_power){
 
-	if(power < currentSpeed){
+	static int8_t currentSpeed_L = 0, currentSpeed_R = 0;
+	static moveDir = STOP;
+	int8_t acceleration = 1;
 
-		for(; currentSpeed != power; currentSpeed++){
-			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
-			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
-			HAL_Delay(20);
+	switch(md){
+	case FORWARD:
+		if(L_power > 0 && R_power > 0){
+			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
 
-			if(currentSpeed == 0){
-				HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
-				HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
+			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
+				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
+				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
+
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
+
+				HAL_Delay(20);
 			}
 		}
-	}
+		break;
+	case BACWARD:
+		if(L_power > 0 && R_power > 0){
+			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
 
-	else{
-		for(; currentSpeed != power; currentSpeed--){
-			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
-			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
-			HAL_Delay(20);
+			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
+				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
+				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
 
-			if(currentSpeed == 0){
-				HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-				HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
+
+				HAL_Delay(20);
 			}
 		}
+		break;
+	case LEFT:
+		if(L_power > 0 && R_power > 0){
+			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
+
+			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
+				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
+				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
+
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
+
+				HAL_Delay(20);
+			}
+		}
+		break;
+	case RIGHT:
+		if(L_power > 0 && R_power > 0){
+			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
+
+			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
+				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
+				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
+
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
+				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
+
+				HAL_Delay(20);
+			}
+		}
+		break;
+	case STOP:
+		HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
+		__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(0));
+		__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(0));
+		break;
 	}
+
+	//			if(power < currentSpeed){
+	//				for(; currentSpeed != power; currentSpeed--){
+	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
+	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
+	//					HAL_Delay(20);
+	//
+	//					if(currentSpeed == 0){
+	//						HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
+	//						HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
+	//					}
+	//				}
+	//			}
+	//			else{
+	//				for(; currentSpeed != power; currentSpeed++){
+	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
+	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
+	//					HAL_Delay(20);
+	//
+	//					if(currentSpeed == 0){
+	//						HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
+	//						HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
+	//					}
+	//				}
+	//			}
 }
 /* USER CODE END PFP */
 
@@ -129,10 +206,20 @@ int main(void)
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
 	MX_TIM8_Init();
+	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
-__robot_init();
+	__robot_init();
+	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_4);
+
+	uint8_t LED_brightness = 0;
+
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
 	/* USER CODE END 2 */
-__robot_Move(99);
+
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
@@ -142,22 +229,21 @@ __robot_Move(99);
 		__robot_Move(-99);
 		HAL_Delay(3000);
 
-//		for(int i = 0; i<99; i++){
-//			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, i);
-//			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, i);
-//			HAL_Delay(20);
-//		}
-//
-//		HAL_Delay(2000);
-//
-//		for(int i = 99; i>0; i--){
-//			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, i);
-//			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, i);
-//			HAL_Delay(20);
-//		}
-//
-//		HAL_Delay(2000);
+		for(; LED_brightness <=99; LED_brightness+=5){
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
+			HAL_Delay(200);
+		}
+		HAL_Delay(2000);
 
+		for(; LED_brightness >0; LED_brightness-=5){
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
+			HAL_Delay(200);
+		}
+		HAL_Delay(2000);
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -204,6 +290,73 @@ void SystemClock_Config(void)
 	{
 		Error_Handler();
 	}
+}
+
+/**
+ * @brief TIM2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM2_Init(void)
+{
+
+	/* USER CODE BEGIN TIM2_Init 0 */
+
+	/* USER CODE END TIM2_Init 0 */
+
+	TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+	TIM_OC_InitTypeDef sConfigOC = {0};
+
+	/* USER CODE BEGIN TIM2_Init 1 */
+
+	/* USER CODE END TIM2_Init 1 */
+	htim2.Instance = TIM2;
+	htim2.Init.Prescaler = 159;
+	htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim2.Init.Period = 99;
+	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM2_Init 2 */
+
+	/* USER CODE END TIM2_Init 2 */
+	HAL_TIM_MspPostInit(&htim2);
+
 }
 
 /**
@@ -295,6 +448,7 @@ static void MX_GPIO_Init(void)
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 
 	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOC_CLK_ENABLE();
 
 	/*Configure GPIO pin Output Level */
