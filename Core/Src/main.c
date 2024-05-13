@@ -35,7 +35,6 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-enum {__FORWARD, __BACKWARD} direction;
 
 /* USER CODE END PM */
 
@@ -53,122 +52,154 @@ static void MX_GPIO_Init(void);
 static void MX_TIM8_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-void __robot_init(){
-	HAL_GPIO_WritePin(MOTOR_L_EN_GPIO_Port, MOTOR_L_EN_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(MOTOR_R_EN_GPIO_Port, MOTOR_R_EN_Pin, GPIO_PIN_RESET);
-	HAL_TIM_PWM_Start(&htim8,  TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim8,  TIM_CHANNEL_3);
-
-	//default move forward
-	HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
-}
 
 enum {FORWARD, BACWARD, LEFT, RIGHT, STOP} moveDir;
+//enum {R, G, B} ledChannel;
 
-void __robot_Move(moveDir md, int8_t L_power, int8_t R_power){
+typedef struct {
+	TIM_HandleTypeDef * wheelPWMTimer;
+	uint32_t wheelPWMChannel;
+	int8_t currentSpeed_forPWM, settedSpeed_forPWM;
+	GPIO_TypeDef* enPort;
+	uint16_t enPin;
 
-	static int8_t currentSpeed_L = 0, currentSpeed_R = 0;
-	static moveDir = STOP;
-	int8_t acceleration = 1;
+} robotWheel;
+
+typedef struct{
+	TIM_HandleTypeDef * R_timer, *G_timer, *B_timer;
+	uint32_t R_channel, G_channel, B_channel;
+	uint8_t currentBrightness_R, settetBrightness_R;
+	uint8_t currentBrightness_G, settetBrightness_G;
+	uint8_t currentBrightness_B, settetBrightness_B;
+	uint8_t brightnessChangeStep_R, brightnessChangeStep_G, brightnessChangeStep_B;
+}RGB_led;
+
+typedef struct {
+	robotWheel *leftWheel, *rightWheel;
+	RGB_led *mLED;
+	int8_t acceleration_forPWM;
+	moveDir mDir;
+} robot;
+
+robot mRobot;
+
+void __robot_init(robot* mRobot){
+
+	//assign perferials to struct members
+	mRobot->leftWheel->wheelPWMTimer = &htim8;
+	mRobot->leftWheel->wheelPWMChannel = TIM_CHANNEL_1;
+	mRobot->leftWheel->enPort = MOTOR_L_EN_GPIO_Port;
+	mRobot->leftWheel->enPin = MOTOR_L_EN_Pin;
+	mRobot->leftWheel->currentSpeed_forPWM = 0;
+	mRobot->leftWheel->settedSpeed_forPWM = 0;
+
+	mRobot->rightWheel->wheelPWMTimer = &htim8;
+	mRobot->rightWheel->wheelPWMChannel = TIM_CHANNEL_3;
+	mRobot->rightWheel->enPort = MOTOR_R_EN_GPIO_Port;
+	mRobot->rightWheel->enPin = MOTOR_R_EN_Pin;
+	mRobot->rightWheel->currentSpeed_forPWM = 0;
+	mRobot->rightWheel->settedSpeed_forPWM = 0;
+
+	mRobot->acceleration_forPWM = 1;
+	mRobot->mDir = STOP;
+
+	//default move forward
+	HAL_GPIO_WritePin(mRobot->leftWheel->enPort, mRobot->leftWheel->enPin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(mRobot->rightWheel->enPort, mRobot->rightWheel->enPin, GPIO_PIN_RESET);
+
+	//start PWM
+	HAL_TIM_PWM_Start(mRobot->leftWheel->wheelPWMTimer,  mRobot->leftWheel->wheelPWMChannel);
+	HAL_TIM_PWM_Start(mRobot->rightWheel->wheelPWMTimer,  mRobot->rightWheel->wheelPWMChannel);
+
+	//reset speeds
+	__HAL_TIM_SET_COMPARE(mRobot->leftWheel->wheelPWMTimer, mRobot->leftWheel->wheelPWMChannel, 0);
+	__HAL_TIM_SET_COMPARE(mRobot->rightWheel->wheelPWMTimer, mRobot->rightWheel->wheelPWMChannel, 0);
+
+	//assign perferials to struct members
+	mRobot->mLED->R_timer = &htim2;
+	mRobot->mLED->G_timer = &htim2;
+	mRobot->mLED->B_timer = &htim2;
+	mRobot->mLED->R_channel = TIM_CHANNEL_2;
+	mRobot->mLED->G_channel = TIM_CHANNEL_3;
+	mRobot->mLED->B_channel = TIM_CHANNEL_4;
+
+	mRobot->mLED->currentBrightness_R = 0;
+	mRobot->mLED->currentBrightness_G = 0;
+	mRobot->mLED->currentBrightness_B = 0;
+	mRobot->mLED->settetBrightness_R = 0;
+	mRobot->mLED->settetBrightness_G = 0;
+	mRobot->mLED->settetBrightness_B = 0;
+	mRobot->mLED->brightnessChangeStep_R = 1;
+	mRobot->mLED->brightnessChangeStep_G = 1;
+	mRobot->mLED->brightnessChangeStep_B = 1;
+
+	//start timers
+	HAL_TIM_PWM_Start(mRobot->mLED->R_timer,  mRobot->mLED->R_channel);
+	HAL_TIM_PWM_Start(mRobot->mLED->G_timer,  mRobot->mLED->G_channel);
+	HAL_TIM_PWM_Start(mRobot->mLED->B_timer,  mRobot->mLED->B_channel);
+
+	//reset brightness
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->R_timer, mRobot->mLED->R_channel, 0);
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->G_timer, mRobot->mLED->G_channel, 0);
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->B_timer, mRobot->mLED->B_channel, 0);
+
+}
+
+//SKONFIGUROWAĆ PRZERWANIE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+void __robot_update_wheel_speed(robotWheel *wheel){
+	if(mRobot->mDir == STOP){wheel->settedSpeed_forPWM = 0;}
+
+	if(wheel->settedSpeed_forPWM < wheel->currentSpeed_forPWM){wheel->currentSpeed_forPWM -= mRobot->acceleration_forPWM;}
+	else{wheel->currentSpeed_forPWM += mRobot->acceleration_forPWM;}
+
+	if(wheel->currentSpeed_forPWM <= 0){HAL_GPIO_WritePin(wheel->enPort, wheel->enPin, GPIO_PIN_SET);}
+	else{HAL_GPIO_WritePin(wheel->enPort, wheel->enPin, GPIO_PIN_RESET);}
+
+	__HAL_TIM_SET_COMPARE(wheel->wheelPWMTimer, wheel->wheelPWMChannel, abs(wheel->currentSpeed_forPWM));
+}
+
+void __robot_update_led_light(){
+
+	mRobot->mLED->settetBrightness_R < mRobot->mLED->currentBrightness_R ? mRobot->mLED->currentBrightness_R -= mRobot->mLED->brightnessChangeStep_R : mRobot->mLED->currentBrightness_R += mRobot->mLED->brightnessChangeStep_R;
+	mRobot->mLED->settetBrightness_G < mRobot->mLED->currentBrightness_G ? mRobot->mLED->currentBrightness_G -= mRobot->mLED->brightnessChangeStep_G : mRobot->mLED->currentBrightness_G += mRobot->mLED->brightnessChangeStep_G;
+	mRobot->mLED->settetBrightness_B < mRobot->mLED->currentBrightness_B ? mRobot->mLED->currentBrightness_B -= mRobot->mLED->brightnessChangeStep_B : mRobot->mLED->currentBrightness_B += mRobot->mLED->brightnessChangeStep_B;
+
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->R_timer, mRobot->mLED->R_channel, mRobot->mLED->currentBrightness_B);
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->G_timer, mRobot->mLED->G_channel, mRobot->mLED->currentBrightness_G);
+	__HAL_TIM_SET_COMPARE(mRobot->mLED->B_timer, mRobot->mLED->B_channel, mRobot->mLED->currentBrightness_B);
+}
+
+
+void __robot_Move(moveDir md, int8_t L_power, int8_t R_power = 0){
 
 	switch(md){
 	case FORWARD:
-		if(L_power > 0 && R_power > 0){
-			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
-			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
-
-			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
-				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
-				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
-
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
-
-				HAL_Delay(20);
-			}
-		}
+		mRobot->mDir = FORWARD;
 		break;
 	case BACWARD:
-		if(L_power > 0 && R_power > 0){
-			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
-
-			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
-				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
-				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
-
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
-
-				HAL_Delay(20);
-			}
-		}
+		mRobot->mDir = BACWARD;
 		break;
 	case LEFT:
-		if(L_power > 0 && R_power > 0){
-			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
-
-			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
-				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
-				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
-
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
-
-				HAL_Delay(20);
-			}
-		}
+		mRobot->mDir = LEFT;
 		break;
 	case RIGHT:
-		if(L_power > 0 && R_power > 0){
-			HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
-
-			while((L_power < currentSpeed_L) || (R_power < currentSpeed_R)){
-				currentSpeed_L < L_power ? currentSpeed_L+=acceleration : currentSpeed_L-=acceleration;
-				currentSpeed_R < R_power ? currentSpeed_R+=acceleration : currentSpeed_R-=acceleration;
-
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed_L));
-				__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed_R));
-
-				HAL_Delay(20);
-			}
-		}
+		mRobot->mDir = RIGHT;
 		break;
 	case STOP:
-		HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
-		__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(0));
-		__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(0));
+		mRobot->mDir = STOP;
+		HAL_GPIO_WritePin(mRobot->leftWheel->enPort, mRobot->leftWheel->enPin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(mRobot->rightWheel->enPort, mRobot->rightWheel->enPin, GPIO_PIN_RESET);
 		break;
 	}
 
-	//			if(power < currentSpeed){
-	//				for(; currentSpeed != power; currentSpeed--){
-	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
-	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
-	//					HAL_Delay(20);
-	//
-	//					if(currentSpeed == 0){
-	//						HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_SET);
-	//						HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_RESET);
-	//					}
-	//				}
-	//			}
-	//			else{
-	//				for(; currentSpeed != power; currentSpeed++){
-	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, abs(currentSpeed));
-	//					__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, abs(currentSpeed));
-	//					HAL_Delay(20);
-	//
-	//					if(currentSpeed == 0){
-	//						HAL_GPIO_WritePin(MOTOR_L_PH_GPIO_Port, MOTOR_L_PH_Pin, GPIO_PIN_RESET);
-	//						HAL_GPIO_WritePin(MOTOR_R_PH_GPIO_Port, MOTOR_R_PH_Pin, GPIO_PIN_SET);
-	//					}
-	//				}
-	//			}
+	mRobot->leftWheel->settedSpeed_forPWM = 0;
+	mRobot->rightWheel->settedSpeed_forPWM = 0;
+}
+
+void __robot_set_led_light(uint8_t R, uint8_t G, uint8_t B){
+	mRobot->mLED->settetBrightness_R = R;
+	mRobot->mLED->settetBrightness_G = G;
+	mRobot->mLED->settetBrightness_B = B;
 }
 /* USER CODE END PFP */
 
@@ -208,16 +239,14 @@ int main(void)
 	MX_TIM8_Init();
 	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
-	__robot_init();
-	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim2,  TIM_CHANNEL_4);
 
-	uint8_t LED_brightness = 0;
+	robotWheel rw, lw;
+	RGB_led led;
+	mRobot->leftWheel = &lw;
+	mRobot->rightWheel = &rw;
+	mRobot->mLED = led;
+	__robot_init(&mRobot);
 
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -229,20 +258,11 @@ int main(void)
 		__robot_Move(-99);
 		HAL_Delay(3000);
 
-		for(; LED_brightness <=99; LED_brightness+=5){
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
-			HAL_Delay(200);
-		}
+		__robot_set_led_light(99,0,0);
 		HAL_Delay(2000);
-
-		for(; LED_brightness >0; LED_brightness-=5){
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, abs(LED_brightness));
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, abs(LED_brightness));
-			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, abs(LED_brightness));
-			HAL_Delay(200);
-		}
+		__robot_set_led_light(0,99,0);
+		HAL_Delay(2000);
+		__robot_set_led_light(0,0,99);
 		HAL_Delay(2000);
 		/* USER CODE END WHILE */
 
