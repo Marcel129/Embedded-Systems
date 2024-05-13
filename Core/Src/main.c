@@ -294,23 +294,48 @@ int main(void)
 
 	__robot_init();
 
+	uint32_t motorTime, ledTime, currTime;
+	motorTime = ledTime = currTime = HAL_GetTick();
+
+	uint8_t motorState = 0, ledState = 0;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		__robot_Move(FORWARD, 99, 99);
-		HAL_Delay(3000);
-		__robot_Move(BACWARD, -99, -99);
-		HAL_Delay(3000);
+		currTime = HAL_GetTick();
 
-		__robot_set_led_light(99,0,0);
-		HAL_Delay(2000);
-		__robot_set_led_light(0,99,0);
-		HAL_Delay(2000);
-		__robot_set_led_light(0,0,99);
-		HAL_Delay(2000);
+		if(currTime - motorTime >= 3000 && motorState == 0){
+			__robot_Move(FORWARD, 99, 99);
+			motorState = 1;
+			motorTime = currTime;
+		}
+
+		if(currTime - motorTime >= 3000 && motorState == 0){
+			__robot_Move(BACWARD, -99, -99);
+			motorState = 0;
+			motorTime = currTime;
+		}
+
+		if(currTime - ledTime >= 2000 && ledState == 0){
+			__robot_set_led_light(99,0,0);
+			ledState = 1;
+			ledTime = currTime;
+		}
+
+		if(currTime - ledTime >= 2000 && ledState == 1){
+			__robot_set_led_light(0,99,0);
+			ledState = 2;
+			ledTime = currTime;
+		}
+
+		if(currTime - ledTime >= 2000 && ledState == 2){
+			__robot_set_led_light(0,0,99);
+			ledState = 0;
+			ledTime = currTime;
+		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
