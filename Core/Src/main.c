@@ -365,7 +365,7 @@ int main(void)
 			motorTime = currTime;
 		}
 
-		if(currTime - motorTime >= 3000 && motorState == 0){
+		if(currTime - motorTime >= 3000 && motorState == 1){
 			__robot_Move(BACWARD, -99, -99);
 			motorState = 0;
 			motorTime = currTime;
