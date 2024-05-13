@@ -59,6 +59,7 @@ typedef struct {
 	TIM_HandleTypeDef * wheelPWMTimer;
 	uint32_t wheelPWMChannel;
 	int8_t currentSpeed_forPWM, settedSpeed_forPWM;
+	int8_t wheelMaxSpeed_forPWM, wheelMinSpeed_forPWM;
 	GPIO_TypeDef* dirPort;
 	uint16_t dirPin;
 
@@ -71,6 +72,7 @@ typedef struct{
 	uint8_t currentBrightness_G, settetBrightness_G;
 	uint8_t currentBrightness_B, settetBrightness_B;
 	uint8_t brightnessChangeStep_R, brightnessChangeStep_G, brightnessChangeStep_B;
+	uint8_t ledMaxBrightness, ledMinBrightness;
 }RGB_led;
 
 typedef struct {
@@ -93,6 +95,8 @@ void __robot_init(){
 	mRobot.leftWheel->dirPin = MOTOR_L_EN_Pin;
 	mRobot.leftWheel->currentSpeed_forPWM = 0;
 	mRobot.leftWheel->settedSpeed_forPWM = 0;
+	mRobot.leftWheel->wheelMaxSpeed_forPWM = 99;
+	mRobot.leftWheel->wheelMinSpeed_forPWM = -99;
 
 	mRobot.rightWheel->wheelPWMTimer = &htim8;
 	mRobot.rightWheel->wheelPWMChannel = TIM_CHANNEL_3;
@@ -100,6 +104,8 @@ void __robot_init(){
 	mRobot.rightWheel->dirPin = MOTOR_R_EN_Pin;
 	mRobot.rightWheel->currentSpeed_forPWM = 0;
 	mRobot.rightWheel->settedSpeed_forPWM = 0;
+	mRobot.rightWheel->wheelMaxSpeed_forPWM = 99;
+	mRobot.rightWheel->wheelMinSpeed_forPWM = -99;
 
 	mRobot.acceleration_forPWM = 1;
 	mRobot.mDir = STOP;
@@ -134,6 +140,9 @@ void __robot_init(){
 	mRobot.mLED->brightnessChangeStep_G = 1;
 	mRobot.mLED->brightnessChangeStep_B = 1;
 
+	mRobot.mLED->ledMaxBrightness = 99;
+	mRobot.mLED->ledMinBrightness = 0;
+
 	//start timers
 	HAL_TIM_PWM_Start(mRobot.mLED->R_timer,  mRobot.mLED->R_channel);
 	HAL_TIM_PWM_Start(mRobot.mLED->G_timer,  mRobot.mLED->G_channel);
@@ -156,10 +165,20 @@ void __robot_update_wheel_speed(robotWheel *wheel){
 	}
 
 	if(wheel->currentSpeed_forPWM > wheel->settedSpeed_forPWM){
-		wheel->currentSpeed_forPWM -= mRobot.acceleration_forPWM;
+		if(wheel->currentSpeed_forPWM - mRobot.acceleration_forPWM < wheel->wheelMinSpeed_forPWM){
+			wheel->currentSpeed_forPWM = wheel->wheelMinSpeed_forPWM;
+		}
+		else{
+			wheel->currentSpeed_forPWM -= mRobot.acceleration_forPWM;
+		}
 	}
 	else if(wheel->currentSpeed_forPWM < wheel->settedSpeed_forPWM){
-		wheel->currentSpeed_forPWM += mRobot.acceleration_forPWM;
+		if(wheel->currentSpeed_forPWM + mRobot.acceleration_forPWM > wheel->wheelMaxSpeed_forPWM){
+			wheel->currentSpeed_forPWM = wheel->wheelMaxSpeed_forPWM;
+		}
+		else{
+			wheel->currentSpeed_forPWM += mRobot.acceleration_forPWM;
+		}
 	}
 
 	if(wheel->currentSpeed_forPWM <= 0){
@@ -176,24 +195,57 @@ void __robot_update_led_light(){
 
 	//update brightness vaules in the structure
 	if(mRobot.mLED->currentBrightness_R > mRobot.mLED->settetBrightness_R ){
-		mRobot.mLED->currentBrightness_R -= mRobot.mLED->brightnessChangeStep_R;
+		//check boundary conditions
+		if(mRobot.mLED->currentBrightness_R - mRobot.mLED->brightnessChangeStep_R < mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMinBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_R -= mRobot.mLED->brightnessChangeStep_R;
+		}
 	}
 	else if(mRobot.mLED->currentBrightness_R < mRobot.mLED->settetBrightness_R){
-		mRobot.mLED->currentBrightness_R += mRobot.mLED->brightnessChangeStep_R;
+		if(mRobot.mLED->currentBrightness_R + mRobot.mLED->brightnessChangeStep_R > mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMaxBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_R += mRobot.mLED->brightnessChangeStep_R;
+		}
 	}
+
 
 	if(mRobot.mLED->currentBrightness_G > mRobot.mLED->settetBrightness_G ){
-		mRobot.mLED->currentBrightness_G -= mRobot.mLED->brightnessChangeStep_G;
+		if(mRobot.mLED->currentBrightness_G - mRobot.mLED->brightnessChangeStep_G < mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMinBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_G -= mRobot.mLED->brightnessChangeStep_G;
+		}
 	}
 	else if(mRobot.mLED->currentBrightness_G < mRobot.mLED->settetBrightness_G){
-		mRobot.mLED->currentBrightness_G += mRobot.mLED->brightnessChangeStep_G;
+		if(mRobot.mLED->currentBrightness_G + mRobot.mLED->brightnessChangeStep_G > mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMaxBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_G += mRobot.mLED->brightnessChangeStep_G;
+		}
 	}
 
+
 	if(mRobot.mLED->currentBrightness_B > mRobot.mLED->settetBrightness_B ){
-		mRobot.mLED->currentBrightness_B -= mRobot.mLED->brightnessChangeStep_B;
+		if(mRobot.mLED->currentBrightness_B - mRobot.mLED->brightnessChangeStep_B < mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMinBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_B -= mRobot.mLED->brightnessChangeStep_B;
+		}
 	}
 	else if(mRobot.mLED->currentBrightness_B < mRobot.mLED->settetBrightness_B){
-		mRobot.mLED->currentBrightness_B += mRobot.mLED->brightnessChangeStep_B;
+		if(mRobot.mLED->currentBrightness_B + mRobot.mLED->brightnessChangeStep_B > mRobot.mLED->ledMinBrightness){
+			mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMaxBrightness;
+		}
+		else{
+			mRobot.mLED->currentBrightness_B += mRobot.mLED->brightnessChangeStep_B;
+		}
 	}
 
 	//set updated values in the timer
