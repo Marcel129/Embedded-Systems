@@ -40,7 +40,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim8;
+
+UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN PV */
 
@@ -51,9 +54,12 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM8_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 
 typedef enum {FORWARD, BACWARD, LEFT, RIGHT, STOP} moveDir;
+typedef enum {LEFT_WHEEL, RIGHT_WHEEL} wheelName;
 
 typedef struct {
 	TIM_HandleTypeDef * wheelPWMTimer;
@@ -62,6 +68,7 @@ typedef struct {
 	int8_t wheelMaxSpeed_forPWM, wheelMinSpeed_forPWM;
 	GPIO_TypeDef* dirPort;
 	uint16_t dirPin;
+	wheelName name;
 
 } robotWheel;
 
@@ -82,9 +89,17 @@ typedef struct {
 	moveDir mDir;
 
 	TIM_HandleTypeDef * IRQ_timer;
+	UART_HandleTypeDef * COM_UART_handler;
 } robot;
 
 robot mRobot;
+uint8_t timeToUpdateStates = 0;
+
+int __io_putchar(int ch)
+{
+    HAL_UART_Transmit(mRobot.COM_UART_handler, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+    return 1;
+}
 
 void __robot_init(){
 
@@ -97,6 +112,7 @@ void __robot_init(){
 	mRobot.leftWheel->settedSpeed_forPWM = 0;
 	mRobot.leftWheel->wheelMaxSpeed_forPWM = 99;
 	mRobot.leftWheel->wheelMinSpeed_forPWM = -99;
+	mRobot.leftWheel->name = LEFT_WHEEL;
 
 	mRobot.rightWheel->wheelPWMTimer = &htim8;
 	mRobot.rightWheel->wheelPWMChannel = TIM_CHANNEL_3;
@@ -106,12 +122,12 @@ void __robot_init(){
 	mRobot.rightWheel->settedSpeed_forPWM = 0;
 	mRobot.rightWheel->wheelMaxSpeed_forPWM = 99;
 	mRobot.rightWheel->wheelMinSpeed_forPWM = -99;
+	mRobot.rightWheel->name = RIGHT_WHEEL;
 
 	mRobot.acceleration_forPWM = 1;
 	mRobot.mDir = STOP;
 
-	//default move forward
-	HAL_GPIO_WritePin(mRobot.leftWheel->dirPort, mRobot.leftWheel->dirPin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(mRobot.leftWheel->dirPort, mRobot.leftWheel->dirPin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(mRobot.rightWheel->dirPort, mRobot.rightWheel->dirPin, GPIO_PIN_RESET);
 
 	//start PWM
@@ -153,7 +169,10 @@ void __robot_init(){
 	__HAL_TIM_SET_COMPARE(mRobot.mLED->G_timer, mRobot.mLED->G_channel, 0);
 	__HAL_TIM_SET_COMPARE(mRobot.mLED->B_timer, mRobot.mLED->B_channel, 0);
 
-	mRobot.IRQ_timer = &htim2;
+	//assign uart handler for communication with PC
+	mRobot.COM_UART_handler = &huart5;
+
+	mRobot.IRQ_timer = &htim7;
 	//start interrupt timer
 	HAL_TIM_Base_Start_IT(mRobot.IRQ_timer);
 
@@ -182,121 +201,129 @@ void __robot_update_wheel_speed(robotWheel *wheel){
 	}
 
 	if(wheel->currentSpeed_forPWM <= 0){
-		HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_SET);
+		if(wheel->name == LEFT_WHEEL){
+			HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_SET);
+		}
+		else if(wheel->name == RIGHT_WHEEL){
+			HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_RESET);
+		}
 	}
 	else{
-		HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_RESET);
+		if(wheel->name == LEFT_WHEEL){
+			HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_RESET);
+		}
+		else if(wheel->name == RIGHT_WHEEL){
+			HAL_GPIO_WritePin(wheel->dirPort, wheel->dirPin, GPIO_PIN_SET);
+
+		}
+
+		__HAL_TIM_SET_COMPARE(wheel->wheelPWMTimer, wheel->wheelPWMChannel, abs(wheel->currentSpeed_forPWM));
 	}
 
-	__HAL_TIM_SET_COMPARE(wheel->wheelPWMTimer, wheel->wheelPWMChannel, abs(wheel->currentSpeed_forPWM));
-}
+	void __robot_update_led_light(){
 
-void __robot_update_led_light(){
-
-	//update brightness vaules in the structure
-	if(mRobot.mLED->currentBrightness_R > mRobot.mLED->settetBrightness_R ){
-		//check boundary conditions
-		if(mRobot.mLED->currentBrightness_R - mRobot.mLED->brightnessChangeStep_R < mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMinBrightness;
+		//update brightness vaules in the structure
+		if(mRobot.mLED->currentBrightness_R > mRobot.mLED->settetBrightness_R ){
+			//check boundary conditions
+			if(mRobot.mLED->currentBrightness_R - mRobot.mLED->brightnessChangeStep_R < mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMinBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_R -= mRobot.mLED->brightnessChangeStep_R;
+			}
 		}
-		else{
-			mRobot.mLED->currentBrightness_R -= mRobot.mLED->brightnessChangeStep_R;
+		else if(mRobot.mLED->currentBrightness_R < mRobot.mLED->settetBrightness_R){
+			if(mRobot.mLED->currentBrightness_R + mRobot.mLED->brightnessChangeStep_R > mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMaxBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_R += mRobot.mLED->brightnessChangeStep_R;
+			}
 		}
-	}
-	else if(mRobot.mLED->currentBrightness_R < mRobot.mLED->settetBrightness_R){
-		if(mRobot.mLED->currentBrightness_R + mRobot.mLED->brightnessChangeStep_R > mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_R = mRobot.mLED->ledMaxBrightness;
-		}
-		else{
-			mRobot.mLED->currentBrightness_R += mRobot.mLED->brightnessChangeStep_R;
-		}
-	}
 
 
-	if(mRobot.mLED->currentBrightness_G > mRobot.mLED->settetBrightness_G ){
-		if(mRobot.mLED->currentBrightness_G - mRobot.mLED->brightnessChangeStep_G < mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMinBrightness;
+		if(mRobot.mLED->currentBrightness_G > mRobot.mLED->settetBrightness_G ){
+			if(mRobot.mLED->currentBrightness_G - mRobot.mLED->brightnessChangeStep_G < mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMinBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_G -= mRobot.mLED->brightnessChangeStep_G;
+			}
 		}
-		else{
-			mRobot.mLED->currentBrightness_G -= mRobot.mLED->brightnessChangeStep_G;
+		else if(mRobot.mLED->currentBrightness_G < mRobot.mLED->settetBrightness_G){
+			if(mRobot.mLED->currentBrightness_G + mRobot.mLED->brightnessChangeStep_G > mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMaxBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_G += mRobot.mLED->brightnessChangeStep_G;
+			}
 		}
-	}
-	else if(mRobot.mLED->currentBrightness_G < mRobot.mLED->settetBrightness_G){
-		if(mRobot.mLED->currentBrightness_G + mRobot.mLED->brightnessChangeStep_G > mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_G = mRobot.mLED->ledMaxBrightness;
-		}
-		else{
-			mRobot.mLED->currentBrightness_G += mRobot.mLED->brightnessChangeStep_G;
-		}
-	}
 
 
-	if(mRobot.mLED->currentBrightness_B > mRobot.mLED->settetBrightness_B ){
-		if(mRobot.mLED->currentBrightness_B - mRobot.mLED->brightnessChangeStep_B < mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMinBrightness;
+		if(mRobot.mLED->currentBrightness_B > mRobot.mLED->settetBrightness_B ){
+			if(mRobot.mLED->currentBrightness_B - mRobot.mLED->brightnessChangeStep_B < mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMinBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_B -= mRobot.mLED->brightnessChangeStep_B;
+			}
 		}
-		else{
-			mRobot.mLED->currentBrightness_B -= mRobot.mLED->brightnessChangeStep_B;
+		else if(mRobot.mLED->currentBrightness_B < mRobot.mLED->settetBrightness_B){
+			if(mRobot.mLED->currentBrightness_B + mRobot.mLED->brightnessChangeStep_B > mRobot.mLED->ledMinBrightness){
+				mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMaxBrightness;
+			}
+			else{
+				mRobot.mLED->currentBrightness_B += mRobot.mLED->brightnessChangeStep_B;
+			}
 		}
-	}
-	else if(mRobot.mLED->currentBrightness_B < mRobot.mLED->settetBrightness_B){
-		if(mRobot.mLED->currentBrightness_B + mRobot.mLED->brightnessChangeStep_B > mRobot.mLED->ledMinBrightness){
-			mRobot.mLED->currentBrightness_B = mRobot.mLED->ledMaxBrightness;
-		}
-		else{
-			mRobot.mLED->currentBrightness_B += mRobot.mLED->brightnessChangeStep_B;
-		}
-	}
 
-	//set updated values in the timer
-	__HAL_TIM_SET_COMPARE(mRobot.mLED->R_timer, mRobot.mLED->R_channel, mRobot.mLED->currentBrightness_B);
-	__HAL_TIM_SET_COMPARE(mRobot.mLED->G_timer, mRobot.mLED->G_channel, mRobot.mLED->currentBrightness_G);
-	__HAL_TIM_SET_COMPARE(mRobot.mLED->B_timer, mRobot.mLED->B_channel, mRobot.mLED->currentBrightness_B);
-}
-
-void __robot_Move(moveDir md, int8_t L_power, int8_t R_power){
-
-	switch(md){
-	case FORWARD:
-		mRobot.mDir = FORWARD;
-		break;
-	case BACWARD:
-		mRobot.mDir = BACWARD;
-		break;
-	case LEFT:
-		mRobot.mDir = LEFT;
-		break;
-	case RIGHT:
-		mRobot.mDir = RIGHT;
-		break;
-	case STOP:
-		mRobot.mDir = STOP;
-		HAL_GPIO_WritePin(mRobot.leftWheel->dirPort, mRobot.leftWheel->dirPin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(mRobot.rightWheel->dirPort, mRobot.rightWheel->dirPin, GPIO_PIN_RESET);
-		mRobot.leftWheel->settedSpeed_forPWM = 0;
-		mRobot.rightWheel->settedSpeed_forPWM = 0;
-		return;
+		//set updated values in the timer
+		__HAL_TIM_SET_COMPARE(mRobot.mLED->R_timer, mRobot.mLED->R_channel, mRobot.mLED->currentBrightness_R);
+		__HAL_TIM_SET_COMPARE(mRobot.mLED->G_timer, mRobot.mLED->G_channel, mRobot.mLED->currentBrightness_G);
+		__HAL_TIM_SET_COMPARE(mRobot.mLED->B_timer, mRobot.mLED->B_channel, mRobot.mLED->currentBrightness_B);
 	}
 
-	mRobot.leftWheel->settedSpeed_forPWM = L_power;
-	mRobot.rightWheel->settedSpeed_forPWM = R_power;
-}
+	void __robot_Move(moveDir md, int8_t L_power, int8_t R_power){
 
-void __robot_set_led_light(uint8_t R, uint8_t G, uint8_t B){
-	mRobot.mLED->settetBrightness_R = R;
-	mRobot.mLED->settetBrightness_G = G;
-	mRobot.mLED->settetBrightness_B = B;
-}
+		switch(md){
+		case FORWARD:
+			mRobot.mDir = FORWARD;
+			break;
+		case BACWARD:
+			mRobot.mDir = BACWARD;
+			break;
+		case LEFT:
+			mRobot.mDir = LEFT;
+			break;
+		case RIGHT:
+			mRobot.mDir = RIGHT;
+			break;
+		case STOP:
+			mRobot.mDir = STOP;
+			HAL_GPIO_WritePin(mRobot.leftWheel->dirPort, mRobot.leftWheel->dirPin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(mRobot.rightWheel->dirPort, mRobot.rightWheel->dirPin, GPIO_PIN_RESET);
+			mRobot.leftWheel->settedSpeed_forPWM = 0;
+			mRobot.rightWheel->settedSpeed_forPWM = 0;
+			return;
+		}
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  if (htim == mRobot.IRQ_timer)
-  {
-	  __robot_update_led_light();
-	  __robot_update_wheel_speed(mRobot.leftWheel);
-	  __robot_update_wheel_speed(mRobot.rightWheel);
-  }
-}
+		mRobot.leftWheel->settedSpeed_forPWM = L_power;
+		mRobot.rightWheel->settedSpeed_forPWM = R_power;
+	}
+
+	void __robot_set_led_light(uint8_t R, uint8_t G, uint8_t B){
+		mRobot.mLED->settetBrightness_R = R;
+		mRobot.mLED->settetBrightness_G = G;
+		mRobot.mLED->settetBrightness_B = B;
+	}
+
+	void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+	{
+		if (htim == mRobot.IRQ_timer)
+		{
+			timeToUpdateStates = 1;
+		}
+	}
 
 
 /* USER CODE END PFP */
@@ -336,62 +363,71 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM8_Init();
   MX_TIM2_Init();
+  MX_TIM7_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
-	robotWheel rw, lw;
-	RGB_led led;
-	mRobot.leftWheel = &lw;
-	mRobot.rightWheel = &rw;
-	mRobot.mLED = &led;
+		robotWheel rw, lw;
+		RGB_led led;
+		mRobot.leftWheel = &lw;
+		mRobot.rightWheel = &rw;
+		mRobot.mLED = &led;
 
-	__robot_init();
+		__robot_init();
 
-	uint32_t motorTime, ledTime, currTime;
-	motorTime = ledTime = currTime = HAL_GetTick();
+		uint32_t motorTime, ledTime, currTime;
+		motorTime = ledTime = currTime = HAL_GetTick();
 
-	uint8_t motorState = 0, ledState = 0;
+		uint8_t motorState = 0, ledState = 0;
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1)
-	{
-		currTime = HAL_GetTick();
+		while (1)
+		{
+			currTime = HAL_GetTick();
 
-		if(currTime - motorTime >= 3000 && motorState == 0){
-			__robot_Move(FORWARD, 99, 99);
-			motorState = 1;
-			motorTime = currTime;
-		}
+			if(timeToUpdateStates == 1){
+				timeToUpdateStates = 0;
+				__robot_update_led_light();
+				__robot_update_wheel_speed(mRobot.leftWheel);
+				__robot_update_wheel_speed(mRobot.rightWheel);
+			}
 
-		if(currTime - motorTime >= 3000 && motorState == 1){
-			__robot_Move(BACWARD, -99, -99);
-			motorState = 0;
-			motorTime = currTime;
-		}
+			if(currTime - motorTime >= 3000 && motorState == 0){
+				__robot_Move(FORWARD, 99, 99);
+				motorState = 1;
+				motorTime = currTime;
+			}
 
-		if(currTime - ledTime >= 2000 && ledState == 0){
-			__robot_set_led_light(99,0,0);
-			ledState = 1;
-			ledTime = currTime;
-		}
+			if(currTime - motorTime >= 3000 && motorState == 1){
+				__robot_Move(BACWARD, -99, -99);
+				motorState = 0;
+				motorTime = currTime;
+			}
 
-		if(currTime - ledTime >= 2000 && ledState == 1){
-			__robot_set_led_light(0,99,0);
-			ledState = 2;
-			ledTime = currTime;
-		}
+			if(currTime - ledTime >= 2000 && ledState == 0){
+				__robot_set_led_light(99,0,0);
+				ledState = 1;
+				ledTime = currTime;
+			}
 
-		if(currTime - ledTime >= 2000 && ledState == 2){
-			__robot_set_led_light(0,0,99);
-			ledState = 0;
-			ledTime = currTime;
-		}
+			if(currTime - ledTime >= 2000 && ledState == 1){
+				__robot_set_led_light(0,99,0);
+				ledState = 2;
+				ledTime = currTime;
+			}
+
+			if(currTime - ledTime >= 2000 && ledState == 2){
+				__robot_set_led_light(0,0,99);
+				ledState = 0;
+				ledTime = currTime;
+			}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	}
+		}
   /* USER CODE END 3 */
 }
 
@@ -514,6 +550,44 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 141;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 19999;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
   * @brief TIM8 Initialization Function
   * @param None
   * @retval None
@@ -593,6 +667,39 @@ static void MX_TIM8_Init(void)
 }
 
 /**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -604,6 +711,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, MOTOR_R_PH_Pin|MOTOR_L_PH_Pin, GPIO_PIN_RESET);
@@ -628,11 +736,11 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-	/* User can add his own implementation to report the HAL error return state */
-	__disable_irq();
-	while (1)
-	{
-	}
+		/* User can add his own implementation to report the HAL error return state */
+		__disable_irq();
+		while (1)
+		{
+		}
   /* USER CODE END Error_Handler_Debug */
 }
 
@@ -647,7 +755,7 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-	/* User can add his own implementation to report the file name and line number,
+		/* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
