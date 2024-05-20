@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdio.h"//for printf()
+#include "stdlib.h"//for abs()
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -201,10 +202,12 @@ void __robot_init(){
 	mRobot.COM_UART_handler = &huart5;
 
 	//assign and start the interrupt timer
+	//this timer is used to generate interrupt for periodicly update state of the robot
 	mRobot.IRQ_timer = &htim7;
 	HAL_TIM_Base_Start_IT(mRobot.IRQ_timer);
 
 	//assign and start the time base timer
+	//this timer is required to precisely measure the proximity using sonar
 	mRobot.timeBaseTimer_1us = &htim5;
 	HAL_TIM_Base_Start(mRobot.timeBaseTimer_1us);
 
@@ -359,7 +362,6 @@ void __startDistanceMeasure(){
 	while(mRobot.timeBaseTimer_1us->Instance->CNT - mRobot.mSonar->prevTime_us < 10);
 	HAL_GPIO_WritePin(mRobot.mSonar->triggerPort, mRobot.mSonar->triggerPin, GPIO_PIN_RESET);
 
-	mRobot.mSonar->prevTime_us = 0;
 	mRobot.timeBaseTimer_1us->Instance->CNT = 0;
 }
 
