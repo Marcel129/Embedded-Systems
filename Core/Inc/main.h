@@ -59,12 +59,17 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define SONAR_ECHO_Pin GPIO_PIN_5
+#define SONAR_ECHO_GPIO_Port GPIOE
+#define SONAR_ECHO_EXTI_IRQn EXTI9_5_IRQn
 #define RGB_R_Pin GPIO_PIN_1
 #define RGB_R_GPIO_Port GPIOA
 #define RGB_G_Pin GPIO_PIN_2
 #define RGB_G_GPIO_Port GPIOA
 #define RGB_B_Pin GPIO_PIN_3
 #define RGB_B_GPIO_Port GPIOA
+#define SONAR_ENABLE_Pin GPIO_PIN_10
+#define SONAR_ENABLE_GPIO_Port GPIOE
 #define MOTOR_R_EN_Pin GPIO_PIN_6
 #define MOTOR_R_EN_GPIO_Port GPIOC
 #define MOTOR_R_PH_Pin GPIO_PIN_7
@@ -73,6 +78,8 @@ void Error_Handler(void);
 #define MOTOR_L_EN_GPIO_Port GPIOC
 #define MOTOR_L_PH_Pin GPIO_PIN_9
 #define MOTOR_L_PH_GPIO_Port GPIOC
+#define SONAR_TRIGGER_Pin GPIO_PIN_8
+#define SONAR_TRIGGER_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
