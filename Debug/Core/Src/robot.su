@@ -1,0 +1,8 @@
+../Core/Src/robot.c:10:5:__io_putchar	16	static
+../Core/Src/robot.c:16:6:__robot_init	24	static
+../Core/Src/robot.c:129:6:__measureTemperature	16	static
+../Core/Src/robot.c:138:6:__robot_update_wheel_speed	16	static
+../Core/Src/robot.c:180:6:__robot_update_led_light	4	static
+../Core/Src/robot.c:243:6:__robot_Move	16	static
+../Core/Src/robot.c:271:6:__robot_set_led_light	16	static
+../Core/Src/robot.c:277:6:__startDistanceMeasure	8	static
